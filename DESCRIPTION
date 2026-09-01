@@ -1,9 +1,13 @@
 Package: priceDiscoveRy
 Title: Information Share Estimation for Financial Markets with Partially Overlapping Trading Hours
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     person("Hui", "Sun", , "sophia8226@163.com", role = c("aut", "cre"))
-Description: Estimates information share for financial markets with Partially Overlapping Trading Hours.
+Description: Estimates daily contribution-weighted information shares (CWIS)
+    for a futures and spot pair observed over a 24-hour trading day. The
+    package separates overlapping and non-overlapping sessions, estimates a
+    vector error-correction model in overlapping sessions, estimates realized
+    kernels in single-market sessions, and aggregates daily results.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -15,6 +19,7 @@ VignetteBuilder: knitr
 Config/roxygen2/version: 8.1.0
 Imports: 
     highfrequency,
+    stats,
     urca,
     xts
 Config/testthat/edition: 3

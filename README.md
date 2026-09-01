@@ -3,11 +3,21 @@
 
 # priceDiscoveRy
 
-<!-- badges: start -->
+`priceDiscoveRy` is an R package for estimating daily
+contribution-weighted information shares (CWIS) for a futures and spot
+market with partially overlapping trading hours.
 
-<!-- badges: end -->
+The package converts a 24-hour price-discovery analysis into a
+reproducible workflow. It validates and standardizes high-frequency
+price data, separates each trading day into overlapping and
+single-market sessions, estimates price discovery during overlapping
+periods with a vector error-correction model (VECM), measures volatility
+in each period, and combines the estimates into daily and multi-day CWIS
+results.
 
-The goal of priceDiscoveRy is to …
+This package is based on the methodology introduced by Thomas Dimpfl and
+Karsten Schweikert in Information Shares for Markets with Partially
+Overlapping Trading Hours.
 
 ## Installation
 
@@ -19,35 +29,175 @@ You can install the development version of priceDiscoveRy from
 pak::pak("Sophia8226/priceDiscoveRy")
 ```
 
+Alternatively, install it with `remotes`:
+
+``` r
+# install.packages("remotes")
+remotes::install_github("Sophia8226/priceDiscoveRy")
+```
+
+## Package workflow
+
+The following diagram summarizes the package workflow from raw input
+data to daily CWIS estimates and the multi-day summary.
+
+<figure>
+<img src="man/figures/package-workflow.png"
+alt="Workflow of the priceDiscoveRy package" />
+<figcaption aria-hidden="true">Workflow of the priceDiscoveRy
+package</figcaption>
+</figure>
+
+## Method overview
+
+For each trading day, `priceDiscoveRy` performs the following steps:
+
+1.  validates timestamps and futures/spot prices;
+2.  assigns observations to trading sessions using New York local time;
+3.  estimates a VECM during periods in which both markets overlap;
+4.  computes Hasbrouck information-share bounds and their midpoint for
+    overlapping period;
+5.  extracts the VECM common price and calculates overlapping-period
+    realized variances;
+6.  estimates generalized realized kernels in non-overlapping periods;
+7.  normalizes period variances into contribution weights; and combines
+    the overlapping and non-overlapping contributions into daily CWIS
+    estimates.
+
+The main calculation can be summarized as
+
+$$\mathrm{CWIS}_{i}
+= w_{\mathrm{overlap}}\,\mathrm{HIS}_{i}
++ w_{i,\mathrm{single}},$$
+
+where $i$ denotes the futures or spot market, the overlapping-period
+weight is multiplied by the Hasbrouck information-share midpoint, and
+the relevant single-market variance weight is added directly.
+
 ## Example
 
-This is a basic example which shows you how to solve a common problem:
+The complete workflow is available through `cwis()`:
 
 ``` r
 library(priceDiscoveRy)
-## basic example code
+
+data("example_sp500_futures_spot_oneweek_24h_1sec")
+
+fit <- cwis(
+  data = example_sp500_futures_spot_oneweek_24h_1sec,
+  datetime_col = "datetime",
+  futures_col = "V1",
+  spot_col = "V2",
+  spot_multiplier = 10,
+  tz = "America/New_York",
+  K = 10L
+)
+
+fit
 ```
 
-What is special about using `README.Rmd` instead of just `README.md`?
-You can include R chunks like so:
+The returned `cwis_result` contains daily estimates, multi-day
+summaries, diagnostics, variance-weight summaries, detailed daily
+objects, and the settings used in the calculation:
 
 ``` r
-summary(cars)
-#>      speed           dist       
-#>  Min.   : 4.0   Min.   :  2.00  
-#>  1st Qu.:12.0   1st Qu.: 26.00  
-#>  Median :15.0   Median : 36.00  
-#>  Mean   :15.4   Mean   : 42.98  
-#>  3rd Qu.:19.0   3rd Qu.: 56.00  
-#>  Max.   :25.0   Max.   :120.00
+fit$daily
+fit$summary
+fit$diagnostics
+fit$variance_weights
 ```
 
-You’ll still need to render `README.Rmd` regularly, to keep `README.md`
-up-to-date. `devtools::build_readme()` is handy for this.
+By default, an error on one trading day is recorded without stopping the
+remaining days. To stop immediately when a daily calculation fails, use:
 
-You can also embed plots, for example:
+``` r
+fit <- cwis(
+  data = example_sp500_futures_spot_oneweek_24h_1sec,
+  datetime_col = "datetime",
+  futures_col = "V1",
+  spot_col = "V2",
+  tz = "America/New_York",
+  continue_on_error = FALSE
+)
+```
 
-<img src="man/figures/README-pressure-1.png" alt="" width="100%" />
+## Plotting results
 
-In that case, don’t forget to commit and push the resulting figure
-files, so they display on GitHub and CRAN.
+`cwis_result` objects have a dedicated `plot()` method. The blue line
+shows the daily Hasbrouck information-share midpoint, the black line
+shows daily CWIS, and the dashed line marks the 50% benchmark. Only
+successful trading days are plotted.
+
+``` r
+plot(fit, market = "futures")
+plot(fit, market = "spot")
+```
+
+Date formatting and the maximum number of horizontal-axis labels can be
+customized:
+
+``` r
+plot(
+  fit,
+  market = "futures",
+  date_format = "%d.%m.%Y",
+  max_date_labels = 12L
+)
+```
+
+## Main functions
+
+| Function | Purpose |
+|----|----|
+| `cwis()` | Run the complete multi-day CWIS workflow |
+| `validate_and_standardize_input()` | Validate timestamps and prices and create a standardized input table |
+| `split_trading_days()` | Split standardized observations into trading days |
+| `split_trading_sessions()` | Assign one day’s observations to market sessions |
+| `vecm()` | Estimate the overlapping-period VECM |
+| `his()` | Compute Hasbrouck information shares from a fitted VECM |
+| `common_price()` | Extract the VECM common price and related diagnostics |
+| `realized_variance()` | Calculate realized variance from efficient-price returns |
+| `realized_kernel()` | Estimate a generalized realized kernel in a single-market session |
+| `combine_weights()` | Combine period variances and calculate normalized weights |
+| `daily_cwis()` | Calculate CWIS for one standardized trading day |
+| `aggregate_cwis()` | Aggregate successful and failed daily results |
+| `plot.cwis_result()` | Plot daily HIS and CWIS for the futures or spot market |
+
+Use the package help pages for complete argument and return-value
+details:
+
+``` r
+?cwis
+?split_trading_sessions
+?plot.cwis_result
+```
+
+## Default trading sessions
+
+The default boundaries reproduce the one-second session ranges in the
+original analysis:
+
+| Session object     | New York time        |
+|--------------------|----------------------|
+| `futures_pre`      | Before 04:00:00      |
+| `overlap_pre`      | 04:00:00 to 09:29:59 |
+| `overlap_core`     | 09:30:00 to 16:00:00 |
+| `overlap_post_1`   | 16:00:01 to 16:59:59 |
+| `spot_maintenance` | 17:00:00 to 17:59:59 |
+| `overlap_post_2`   | 18:00:00 to 19:59:59 |
+| `futures_post`     | From 20:00:00 onward |
+
+Session membership is determined from timestamps rather than fixed row
+positions. The default boundaries and tests currently reproduce the
+intended behavior for one-second data.
+
+## Development status
+
+The package is under active development, and the current automated test
+suite passes successfully. Results depend on the selected session
+boundaries, sampling frequency, VECM lag order, realized-kernel
+settings, and data quality.
+
+## License
+
+This project is licensed under the MIT License.
