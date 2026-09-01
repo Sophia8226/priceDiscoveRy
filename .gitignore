@@ -5,3 +5,7 @@
 .httr-oauth
 .DS_Store
 .quarto
+inst/doc
+/doc/
+/Meta/
+/man/.Rd2pdf*

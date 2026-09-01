@@ -1,2 +1,9 @@
 ^priceDiscoveRy\.Rproj$
 ^\.Rproj\.user$
+^LICENSE\.md$
+^README\.Rmd$
+^doc$
+^Meta$
+^man/[.]Rd2pdf
+^tests/testthat/[.]RData$
+^documentation$
