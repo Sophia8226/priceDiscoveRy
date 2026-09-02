@@ -146,11 +146,25 @@ trading days are plotted.
 plot(fit, market = "futures")
 ```
 
+<figure>
+<img src="man/figures/cwis_sp500_futures.png"
+alt="Daily HIS and CWIS estimates for the S&amp;P 500 futures market" />
+<figcaption aria-hidden="true">Daily HIS and CWIS estimates for the
+S&amp;P 500 futures market</figcaption>
+</figure>
+
 ### S&P 500 spot
 
 ``` r
 plot(fit, market = "spot")
 ```
+
+<figure>
+<img src="man/figures/cwis_sp500_spot.png"
+alt="Daily HIS and CWIS estimates for the S&amp;P 500 spot market" />
+<figcaption aria-hidden="true">Daily HIS and CWIS estimates for the
+S&amp;P 500 spot market</figcaption>
+</figure>
 
 Date formatting and the maximum number of horizontal-axis labels can be
 customized:

@@ -119,11 +119,15 @@ The daily HIS and CWIS estimates can be visualized separately for the futures an
 plot(fit, market = "futures")
 ```
 
+![Daily HIS and CWIS estimates for the S&P 500 futures market](man/figures/cwis_sp500_futures.png)
+
 ### S&P 500 spot
 
 ```{r plot-spot-code, eval=FALSE}
 plot(fit, market = "spot")
 ```
+
+![Daily HIS and CWIS estimates for the S&P 500 spot market](man/figures/cwis_sp500_spot.png)
 
 Date formatting and the maximum number of horizontal-axis labels can be
 customized:
