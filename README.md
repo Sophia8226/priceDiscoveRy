@@ -107,6 +107,18 @@ fit$diagnostics
 fit$variance_weights
 ```
 
+The aggregate HIS and CWIS estimates can be displayed directly:
+
+``` r
+fit$summary
+```
+
+    ##   statistic    futures       spot
+    ## 1  HIS mean 0.44460661 0.55539339
+    ## 2    HIS SD 0.06395024 0.06395024
+    ## 3 CWIS mean 0.56442094 0.43557906
+    ## 4   CWIS SD 0.03987475 0.03987475
+
 By default, an error on one trading day is recorded without stopping the
 remaining days. To stop immediately when a daily calculation fails, use:
 
@@ -123,13 +135,20 @@ fit <- cwis(
 
 ## Plotting results
 
-`cwis_result` objects have a dedicated `plot()` method. The blue line
-shows the daily Hasbrouck information-share midpoint, the black line
-shows daily CWIS, and the dashed line marks the 50% benchmark. Only
-successful trading days are plotted.
+`cwis_result` objects have a dedicated `plot()` The daily HIS and CWIS
+estimates can be visualized separately for the futures and spot markets.
+The dashed horizontal line represents the 50% benchmark.Only successful
+trading days are plotted.
+
+### S&P 500 futures
 
 ``` r
 plot(fit, market = "futures")
+```
+
+### S&P 500 spot
+
+``` r
 plot(fit, market = "spot")
 ```
 
