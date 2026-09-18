@@ -216,7 +216,7 @@
 #'
 #' Gonzalo, J. and Granger, C. (1995). Estimation of common long-memory
 #' components in cointegrated systems.
-#' \emph{Journal of Business \& Economic Statistics}, 13(1), 27--35.
+#' \emph{Journal of Business & Economic Statistics}, 13(1), 27--35.
 #'
 #' Dias, G. F. and Schweikert, K. (2022). Integrated variance estimation for
 #' assets traded in multiple venues. \emph{SSRN Working Paper}, 1--48.

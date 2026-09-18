@@ -183,7 +183,7 @@ rk
 }
 \references{
 Hansen, P. R. and Lunde, A. (2006). Realized variance and market
-microstructure noise. \emph{Journal of Business \& Economic Statistics},
+microstructure noise. \emph{Journal of Business & Economic Statistics},
 24(2), 127--161. \doi{10.1198/073500106000000071}
 
 Barndorff-Nielsen, O. E., Hansen, P. R., Lunde, A., and Shephard, N. (2008).
