@@ -1,13 +1,31 @@
 Package: priceDiscoveRy
 Title: Information Share Estimation for Financial Markets with Partially Overlapping Trading Hours
 Version: 0.1.0
-Authors@R: 
-    person("Hui", "Sun", , "sophia8226@163.com", role = c("aut", "cre"))
+Authors@R: c(
+    person(
+      given = "Hui",
+      family = "Sun",
+      email = "sophia8226@163.com",
+      role = c("aut", "cre")
+    ),
+    person(
+      given = "Thomas",
+      family = "Dimpfl",
+      role = c("ctb", "ths")
+    ),
+    person(
+      given = "Karsten",
+      family = "Schweikert",
+      role = c("ctb", "ths")
+    )
+  )
 Description: Estimates daily contribution-weighted information shares (CWIS)
-    for a futures and spot pair observed over a 24-hour trading day. The
-    package separates overlapping and non-overlapping sessions, estimates a
-    vector error-correction model in overlapping sessions, estimates realized
-    kernels in single-market sessions, and aggregates daily results.
+    for futures and spot markets with partially overlapping trading hours.
+    The package estimates Hasbrouck information shares during overlapping
+    sessions, estimates realized variation during single-market sessions,
+    and aggregates period-specific contributions into daily CWIS values.
+    The methodology is based on Dimpfl and Schweikert (2023)
+    <doi:10.1016/j.jbankfin.2023.106970>.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

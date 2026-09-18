@@ -7,12 +7,67 @@
 split_trading_days(data)
 }
 \arguments{
-\item{data}{Standardized data returned by
-\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}}.}
+\item{data}{A standardized data frame returned by
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}}. It must contain the columns
+\code{datetime}, \code{trading_day}, \code{futures}, and \code{spot}.}
 }
 \value{
-A named list of daily data frames.
+A named list of data frames, with one element for each trading day present
+in \code{data}. List names are the character representations of the corresponding
+trading dates. Each data frame retains the columns and chronological order
+of the standardized input and carries the same \code{"tz"} attribute.
 }
 \description{
-Split standardized observations by trading day
+Splits standardized futures and spot-price observations into separate
+data frames for each trading day.
+}
+\details{
+Observations are grouped according to the \code{trading_day} column created by
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}}. Each resulting data frame contains the
+observations belonging to one calendar day in the time zone used during
+standardization.
+
+The function does not define intraday trading sessions, resample prices, or
+remove incomplete trading days. Intraday session assignment is performed
+separately by \code{\link[=split_trading_sessions]{split_trading_sessions()}}.
+
+Row names are reset within each daily data frame. The \code{"tz"} attribute of
+the input data is copied to every element of the returned list.
+}
+\examples{
+example_data <- data.frame(
+  timestamp = c(
+    "2026-01-05 09:30:00",
+    "2026-01-05 09:30:01",
+    "2026-01-06 09:30:00",
+    "2026-01-06 09:30:01"
+  ),
+  futures_price = c(5000, 5001, 5010, 5012),
+  etf_price = c(500.0, 500.1, 501.0, 501.2)
+)
+
+standardized <- validate_and_standardize_input(
+  data = example_data,
+  datetime_col = "timestamp",
+  futures_col = "futures_price",
+  spot_col = "etf_price",
+  spot_multiplier = 10,
+  tz = "America/New_York"
+)
+
+daily_data <- split_trading_days(standardized)
+
+names(daily_data)
+daily_data[[1]]
+
+}
+\references{
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} for input validation and standardization;
+\code{\link[=split_trading_sessions]{split_trading_sessions()}} for dividing one trading day into intraday
+sessions; \code{\link[=daily_cwis]{daily_cwis()}} for estimating CWIS for a single trading day.
 }

@@ -11,19 +11,120 @@ split_trading_sessions(
 )
 }
 \arguments{
-\item{day_data}{One standardized trading-day data frame.}
+\item{day_data}{A standardized data frame for one trading day, normally one
+element returned by \code{\link[=split_trading_days]{split_trading_days()}}. It must contain \code{datetime},
+\code{trading_day}, \code{futures}, and \code{spot}.}
 
-\item{boundaries}{Named numeric vector of seconds from midnight.}
+\item{boundaries}{A strictly increasing named numeric vector containing
+seconds from local midnight. It must contain, in order, the names
+\code{overlap_open}, \code{core_open}, \code{core_close_exclusive},
+\code{maintenance_start}, \code{overlap_resume}, and \code{overlap_close}. All boundaries
+must be finite and lie strictly between 00:00:00 and 24:00:00.}
 
-\item{tz}{Time zone used to interpret timestamps. By default the time zone
-stored by \code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} is used.}
+\item{tz}{A time-zone string used to convert timestamps to local clock time.
+By default, the \code{"tz"} attribute stored by
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} is used. If that attribute is absent,
+\code{"America/New_York"} is used.}
 }
 \value{
-A named list containing seven component sessions and one combined
-\code{overlap} data frame.
+A named list containing the following data frames:
+\itemize{
+\item \code{futures_pre};
+\item \code{overlap_pre};
+\item \code{overlap_core};
+\item \code{overlap_post_1};
+\item \code{spot_maintenance};
+\item \code{overlap_post_2};
+\item \code{futures_post};
+\item \code{overlap}, containing all four overlapping-session components.
+}
+
+Each data frame retains the columns of \code{day_data}, has reset row names, and
+carries the time zone used by the function in its \code{"tz"} attribute. Sessions
+without observations are returned as empty data frames.
 }
 \description{
-The default boundaries reproduce the one-second index ranges in the
-original analysis. In particular, 16:00:00 belongs to the core session and
-the following second begins the first post-trading overlap session.
+Divides one standardized trading-day data frame into overlapping and
+single-market sessions according to local clock time.
+}
+\details{
+The function assigns every observation to one of seven non-overlapping
+component sessions. With the default boundaries, these sessions are:
+
+\strong{Trading-session structure:}
+
+\if{html}{\figure{trading-sessions.svg}{options: width="1000" style="display:block; margin-left:auto; margin-right:auto; max-width:100\%; height:auto;" alt="Trading-session structure"}}
+\if{latex}{
+\out{\begin{center}}
+\figure{trading-sessions.pdf}{options: width=6in}
+\out{\end{center}}
+}
+\itemize{
+\item \code{futures_pre}: before 04:00:00;
+\item \code{overlap_pre}: from 04:00:00 to 09:30:00;
+\item \code{overlap_core}: from 09:30:00 to 16:00:01;
+\item \code{overlap_post_1}: from 16:00:01 to 17:00:00;
+\item \code{spot_maintenance}: from 17:00:00 to 18:00:00;
+\item \code{overlap_post_2}: from 18:00:00 to 20:00:00;
+\item \code{futures_post}: from 20:00:00 onward.
+}
+
+Except for the first and last sessions, intervals include their lower
+boundary and exclude their upper boundary. The combined \code{overlap} data
+frame is formed by chronologically joining \code{overlap_pre}, \code{overlap_core},
+\code{overlap_post_1}, and \code{overlap_post_2}.
+
+The default value of \code{core_close_exclusive} is 16:00:01. It was chosen for
+one-second observations so that 16:00:00 remains in \code{overlap_core} and the
+following second begins \code{overlap_post_1}. With sub-second data, observations
+between 16:00:00 and 16:00:01 are therefore also assigned to
+\code{overlap_core}. Users analysing millisecond data should verify that this
+convention is appropriate and, if necessary, supply sampling-frequency-
+appropriate \code{boundaries}.
+
+Session membership is determined in \code{tz}. Specifying a different time zone
+changes the local clock time used for the allocation but does not change the
+underlying timestamp instants.
+}
+\examples{
+example_data <- data.frame(
+  timestamp = c(
+    "2026-01-05 03:59:59",
+    "2026-01-05 04:00:00",
+    "2026-01-05 09:30:00",
+    "2026-01-05 16:00:00",
+    "2026-01-05 16:00:01",
+    "2026-01-05 17:00:00",
+    "2026-01-05 18:00:00",
+    "2026-01-05 20:00:00"
+  ),
+  futures_price = 5000:5007,
+  etf_price = 500:507
+)
+
+standardized <- validate_and_standardize_input(
+  data = example_data,
+  datetime_col = "timestamp",
+  futures_col = "futures_price",
+  spot_col = "etf_price",
+  spot_multiplier = 10,
+  tz = "America/New_York"
+)
+
+day_data <- split_trading_days(standardized)[[1]]
+sessions <- split_trading_sessions(day_data)
+
+names(sessions)
+vapply(sessions, nrow, integer(1))
+
+}
+\references{
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} for preparing the input data;
+\code{\link[=split_trading_days]{split_trading_days()}} for creating daily data frames; \code{\link[=daily_cwis]{daily_cwis()}} for
+calculating daily information shares from the resulting sessions.
 }

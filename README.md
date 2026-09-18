@@ -66,13 +66,30 @@ For each trading day, `priceDiscoveRy` performs the following steps:
 
 The main calculation can be summarized as
 
-$$\mathrm{CWIS}_{i}
-= w_{\mathrm{overlap}}\,\mathrm{HIS}_{i}
-+ w_{i,\mathrm{single}},$$
-
-where $i$ denotes the futures or spot market, the overlapping-period
-weight is multiplied by the Hasbrouck information-share midpoint, and
-the relevant single-market variance weight is added directly.
+``` math
+\begin{pmatrix}
+S_{cw,1}^{*} \\
+S_{cw,2}^{*}
+\end{pmatrix}
+=
+w_{\mathit{overlap}}
+\begin{pmatrix}
+S_{1}^{*} \\
+S_{2}^{*}
+\end{pmatrix}
++
+w_{\mathit{market1}}
+\begin{pmatrix}
+1 \\
+0
+\end{pmatrix}
++
+w_{\mathit{market2}}
+\begin{pmatrix}
+0 \\
+1
+\end{pmatrix}.
+```
 
 ## Example
 
@@ -108,16 +125,6 @@ fit$variance_weights
 ```
 
 The aggregate HIS and CWIS estimates can be displayed directly:
-
-``` r
-fit$summary
-```
-
-    ##   statistic    futures       spot
-    ## 1  HIS mean 0.44460661 0.55539339
-    ## 2    HIS SD 0.06395024 0.06395024
-    ## 3 CWIS mean 0.56442094 0.43557906
-    ## 4   CWIS SD 0.03987475 0.03987475
 
 By default, an error on one trading day is recorded without stopping the
 remaining days. To stop immediately when a daily calculation fails, use:
@@ -209,6 +216,13 @@ details:
 
 The default boundaries reproduce the one-second session ranges in the
 original analysis:
+
+<figure>
+<img src="man/figures/trading-sessions.png"
+alt="Default 24-hour trading-sessionstructure" />
+<figcaption aria-hidden="true">Default 24-hour
+trading-sessionstructure</figcaption>
+</figure>
 
 | Session object     | New York time        |
 |--------------------|----------------------|

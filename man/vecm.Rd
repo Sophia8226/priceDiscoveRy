@@ -2,21 +2,212 @@
 % Please edit documentation in R/4_vecm.R
 \name{vecm}
 \alias{vecm}
-\title{Estimate the overlapping-period VECM}
+\title{Estimate a VECM for the overlapping trading period}
 \usage{
 vecm(log_prices, K = 10, type = "trace", ecdet = "none", spec = "transitory")
 }
 \arguments{
-\item{log_prices}{A two-column matrix or data frame of log futures and spot
-prices.}
+\item{log_prices}{A numeric two-column matrix or data frame containing log
+futures prices in the first column and log spot prices in the second.}
 
-\item{K}{Lag order passed to \code{\link[urca:ca.jo]{urca::ca.jo()}}.}
+\item{K}{Integer lag order of the variables in the underlying level VAR
+passed to \code{\link[urca:ca.jo]{urca::ca.jo()}}. The corresponding VECM contains \code{K - 1}
+lags of first differences. \code{K} must be at least 2 for use with the
+downstream CWIS functions. The default is 10. Users may choose another
+value according to the sampling frequency, number of available observations,
+and lag-selection diagnostics.}
 
-\item{type, ecdet, spec}{Arguments passed to \code{\link[urca:ca.jo]{urca::ca.jo()}}.}
+\item{type}{Character string specifying the Johansen cointegration-rank
+test: \code{"trace"} for the trace test or \code{"eigen"} for the maximum-eigenvalue
+test.}
+
+\item{ecdet}{A character string specifying the deterministic term in
+the cointegration relation: \code{"none"}, \code{"const"}, or \code{"trend"}.
+Defaults to \code{"none"}, meaning that no intercept is included in the
+cointegration relation.}
+
+\item{spec}{Character string specifying the VECM parameterization:
+\code{"transitory"} or \code{"longrun"}.}
 }
 \value{
-A \code{ca.jo} object.
+An S4 object of class \code{ca.jo} returned by \code{\link[urca:ca.jo]{urca::ca.jo()}}. The object
+contains the Johansen test statistics, eigenvalues, cointegrating vectors,
+loading coefficients, short-run coefficient matrices, residual-related
+matrices, and estimation settings. The two input variables are stored under
+the standardized names \code{futures} and \code{spot}.
+
+The returned object can be passed to \code{\link[=his]{his()}} to calculate Hasbrouck
+information shares and to \code{\link[=common_price]{common_price()}} to estimate innovations in the
+permanent common price.
 }
 \description{
-Estimate the overlapping-period VECM
+Estimates a bivariate Johansen vector error-correction model (VECM) for
+synchronized log futures and spot prices observed while both markets are
+trading.
+}
+\details{
+When two markets simultaneously trade claims on the same underlying asset,
+the law of one price implies that their prices share a common long-run
+value. Observed prices may nevertheless deviate temporarily because of
+market-specific microstructure effects and differences in adjustment speed
+(Hasbrouck, 1995; Dimpfl and Schweikert, 2023).
+
+These common long-run and market-specific short-run dynamics can be
+represented by a cointegrated vector error-correction model (VECM). For the
+default transitory specification, the model estimated by \code{\link[urca:ca.jo]{urca::ca.jo()}}
+can be summarized as
+
+\deqn{
+\Delta p_t =
+\Pi p_{t-1} +
+\sum_{i=1}^{K-1}\Gamma_i\Delta p_{t-i} +
+d_t + u_t,
+}
+
+where \eqn{p_t} contains the futures and spot log prices,
+\eqn{\Pi = \alpha\beta^\prime} is the long-run coefficient matrix,
+\eqn{\beta} is the cointegrating vector, \eqn{\alpha} contains the
+adjustment coefficients, \eqn{\Gamma_i} contains the short-run
+coefficient matrices, \eqn{d_t} represents the deterministic terms,
+and \eqn{u_t} is a vector of reduced-form white-noise innovations satisfying
+\eqn{E(u_t)=0} and
+
+\deqn{
+\Omega =
+E\left(u_tu_t^\prime\right)
+=
+\operatorname{Var}(u_t).
+}
+
+The fitted model supplies the cointegrating vectors, adjustment
+coefficients, short-run coefficients, innovations, and innovation
+covariance information used in the subsequent price-discovery analysis.
+In particular, \code{\link[=common_price]{common_price()}} uses the VECM to recover innovations in the
+permanent common price, while \code{\link[=his]{his()}} uses its long-run impact and
+innovation covariance matrices to calculate Hasbrouck information shares.
+
+With \code{spec = "transitory"}, the error-correction term is based on
+\eqn{p_{t-1}}, and the short-run coefficients describe transitory effects.
+With \code{spec = "longrun"}, \code{\link[urca:ca.jo]{urca::ca.jo()}} uses its alternative long-run
+parameterization. The cointegration matrix and the corresponding inference
+are unchanged, but the short-run coefficient matrices differ.
+
+The function conducts the Johansen procedure but does not automatically
+select a lag order or impose a cointegration rank. The intended downstream
+CWIS calculation assumes that the two prices are linked by one economically
+meaningful common stochastic trend. Users should assess whether this
+assumption is appropriate for their data.
+}
+\section{Lag order and relation to the referenced methodology}{
+
+
+Dimpfl and Schweikert (2023) use a high-resolution VECM with a
+heterogeneous-autoregressive structure for the short-run coefficients.
+In their specification, \eqn{\delta} denotes the number of time scales and
+\eqn{k_i} defines the range of each scale. At a sampling frequency of
+10 milliseconds, they set \eqn{\delta = 4}, \eqn{k_1 = 1},
+\eqn{k_2 = 10}, \eqn{k_3 = 100}, and \eqn{k_4 = 1000}.
+
+The four coefficient matrices \eqn{\Gamma^{(1)},\ldots,\Gamma^{(4)}} are
+applied to price changes aggregated over lag ranges 1, 2--10, 11--100, and
+101--1000 observations, respectively. The final range therefore extends to
+a maximum lag horizon of ten seconds while only four time-scale coefficient
+matrices are estimated.
+
+The present function instead estimates the standard Johansen VECM provided
+by \code{\link[urca:ca.jo]{urca::ca.jo()}}. Here, \code{K} is the lag order of the underlying level VAR,
+and the corresponding VECM contains \code{K - 1} separately estimated
+first-difference lag matrices.
+
+The time span represented by \code{K} depends on the sampling interval. With
+one-second observations, \code{K = 10} represents a maximum level-VAR lag of
+approximately ten seconds, whereas with 10-millisecond observations it
+represents only approximately 100 milliseconds.
+
+Consequently, \code{K} should be selected for the sampling frequency and data
+used in the present implementation rather than copied mechanically from the
+reference paper. Larger values allow richer short-run dynamics but require
+more observations and increase estimation uncertainty and computational
+cost. \code{K} must be at least 2 because the downstream CWIS calculation
+requires at least one lag of first differences.
+
+The function therefore implements the standard-VECM component of the CWIS
+framework but is not an exact replication of the paper's high-resolution
+HAR-VECM.
+}
+
+\section{Input requirements}{
+
+
+\code{log_prices} must contain exactly two columns, ordered as futures followed
+by spot. Values must already be expressed as logarithmic prices; the
+function does not transform price levels to logarithms.
+
+Rows should represent synchronized, chronologically ordered observations
+from periods in which both markets are trading. All values must be numeric
+and finite, and both price series must vary over the estimation sample.
+Missing values are not permitted.
+
+The number of observations must be greater than \code{K + 2}. This is only a
+minimum computational requirement. Substantially more observations may be
+needed for reliable estimation, especially when a large \code{K} is used.
+}
+
+\examples{
+set.seed(123)
+
+n <- 300
+common_trend <- cumsum(rnorm(n, sd = 0.002))
+futures_noise <- rnorm(n, sd = 0.0002)
+spot_noise <- rnorm(n, sd = 0.0003)
+
+simulated_log_prices <- cbind(
+  futures = log(5000) + common_trend + futures_noise,
+  spot = log(5000) + common_trend + spot_noise
+)
+
+# K = 2 is used here to keep the simulated example compact. Users may
+# choose a larger value when supported by the data and diagnostics.
+fit <- vecm(
+  log_prices = simulated_log_prices,
+  K = 2,
+  type = "trace",
+  ecdet = "none",
+  spec = "transitory"
+)
+
+# Johansen trace statistics and critical values
+fit@teststat
+fit@cval
+
+}
+\references{
+Johansen, S. (1988). Statistical analysis of cointegration vectors.
+\emph{Journal of Economic Dynamics and Control}, 12(2-3), 231-254.
+\doi{10.1016/0165-1889(88)90041-3}
+
+Johansen, S. (1991). Estimation and hypothesis testing of cointegration
+vectors in Gaussian vector autoregressive models. \emph{Econometrica},
+59(6), 1551-1580. \doi{10.2307/2938278}
+
+Hasbrouck, J. (1995). One security, many markets: Determining the
+contributions to price discovery.\emph{The Journal of Finance}, 50(4),
+1175--1199.\doi{10.2307/2329348}
+
+Hasbrouck, J. (2021). Price discovery in high resolution.
+\emph{Journal of Financial Econometrics}, 19(3), 395--430.
+\doi{10.1093/jjfinec/nbz027}
+
+Buccheri, G., Bormetti, G., Corsi, F., and Lillo, F. (2021). Comment on:
+Price discovery in high resolution. \emph{Journal of Financial Econometrics},
+19(3), 439--451. \doi{10.1093/jjfinec/nbz008}
+
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[urca:ca.jo]{urca::ca.jo()}} for the underlying Johansen procedure; \code{\link[=his]{his()}} for
+Hasbrouck information shares; \code{\link[=common_price]{common_price()}} for innovations in the
+common efficient price; \code{\link[=daily_cwis]{daily_cwis()}} for the complete daily calculation.
 }

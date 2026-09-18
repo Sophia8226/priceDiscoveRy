@@ -15,18 +15,296 @@ daily_cwis(
 )
 }
 \arguments{
-\item{day_data}{One standardized trading day.}
+\item{day_data}{A standardized data frame containing exactly one trading
+day and the columns \code{datetime}, \code{trading_day}, \code{futures}, and \code{spot}.}
 
-\item{K}{VECM lag order.}
+\item{K}{Integer lag order of the variables in the underlying level VAR
+passed to \code{\link[urca:ca.jo]{urca::ca.jo()}}. The corresponding VECM contains \code{K - 1}
+lags of first differences. \code{K} must be at least 2 for use with the
+downstream CWIS functions. The default is 10. Users may choose another
+value according to the sampling frequency, number of available observations,
+and lag-selection diagnostics.}
 
-\item{kernel_type, bandwidth_constant, align_by, align_period}{Controls for
-single-market realized kernels.}
+\item{kernel_type}{Character string specifying the kernel used by
+\code{\link[highfrequency:rKernelCov]{highfrequency::rKernelCov()}} to estimate realized kernels for
+non-overlapping trading sessions. Available kernel names can be inspected
+with \code{\link[highfrequency:listAvailableKernels]{highfrequency::listAvailableKernels()}}. The default,
+\code{"ModifiedTukeyHanning"}, follows Dimpfl and Schweikert (2023).}
 
-\item{session_boundaries}{Named session-boundary vector.}
+\item{bandwidth_constant}{Optional positive numeric multiplier \eqn{c} used
+to set the session-specific kernel parameter passed to
+\code{\link[highfrequency:rKernelCov]{highfrequency::rKernelCov()}} as
+\eqn{B=\lfloor c\sqrt{N}\rfloor}, where \eqn{N} is the number of rows in
+the session data. When \code{NULL}, \code{c = 2.3970} is used for
+\code{"ModifiedTukeyHanning"} and \code{c = 3.5134} for \code{"Parzen"}. Other kernel
+types require an explicitly supplied positive value.}
+
+\item{align_by}{Character string specifying the sampling unit in which
+\code{align_period} is expressed when aligning the non-overlapping session
+data. Supported values include \code{"ticks"}, \code{"seconds"}, \code{"minutes"}, and
+\code{"hours"}. Set to \code{NULL} to retain the original observation frequency,
+in which case \code{align_period} is ignored.}
+
+\item{align_period}{Positive numeric value specifying the number of
+\code{align_by} units in each sampling interval. It is ignored when
+\code{align_by = NULL}.}
+
+\item{session_boundaries}{A strictly increasing named numeric vector defining
+the trading-session boundaries in seconds after local midnight. It must
+contain, in order, \code{overlap_open}, \code{core_open},
+\code{core_close_exclusive}, \code{maintenance_start}, \code{overlap_resume}, and
+\code{overlap_close}. All values must be finite and lie strictly between
+00:00:00 and 24:00:00. See \code{\link[=split_trading_sessions]{split_trading_sessions()}} for the precise
+interval definitions.}
 }
 \value{
-A \code{cwis_day_result} list.
+An object of class \code{cwis_day_result}, implemented as a list with the
+following components:
+
+\describe{
+\item{\code{date}}{
+The single trading date represented by \code{day_data}.
+}
+\item{\code{his_lower}}{
+A named numeric vector containing the lower Hasbrouck information-share
+bound for futures and spot.
+}
+\item{\code{his_upper}}{
+A named numeric vector containing the upper Hasbrouck information-share
+bound for futures and spot.
+}
+\item{\code{his_midpoint}}{
+A named numeric vector containing the midpoint of the lower and upper
+Hasbrouck bounds.
+}
+\item{\code{residual_correlation}}{
+The Pearson correlation between the two residual columns in \code{vecm_fit@R0};
+A high correlation is generally associated with wider
+Hasbrouck bounds.
+}
+\item{\code{zero_return_fraction}}{
+A named numeric vector giving the proportion of zero log returns in the
+pooled overlapping sample for futures and spot.
+}
+\item{\code{realized_variance}}{
+A named numeric vector containing variance estimates for
+\code{futures_pre}, \code{spot_maintenance}, \code{futures_post}, \code{overlap_pre},
+\code{overlap_core}, and \code{overlap_post}.
+}
+\item{\code{variance_weights}}{
+The corresponding normalized period weights. These sum to one up to
+numerical precision.
+}
+\item{\code{overlapping_weight}}{
+The total weight assigned to \code{overlap_pre}, \code{overlap_core}, and
+\code{overlap_post}.
+}
+\item{\code{cwis}}{
+A named numeric vector containing the daily CWIS for \code{futures} and
+\code{spot}.
+}
+\item{\code{n_observations}}{
+The total number of rows in \code{day_data}.
+}
+\item{\code{n_overlap}}{
+The total number of observations in the four overlapping component
+sessions.
+}
+}
 }
 \description{
-Calculate CWIS for one trading day
+Calculates the contribution-weighted information share (CWIS) for a
+futures-spot pair over one trading day with partially overlapping trading
+hours.
+
+The function combines Hasbrouck information shares from overlapping trading
+periods with realized variances from non-overlapping periods.
+}
+\details{
+\code{day_data} is assumed to have been validated and standardized by
+\code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} and restricted to a single trading day
+by \code{\link[=split_trading_days]{split_trading_days()}}. In the complete package workflow, these
+preprocessing steps are performed by \code{\link[=cwis]{cwis()}}. The daily calculation then
+proceeds as follows:
+
+\enumerate{
+\item \code{\link[=split_trading_sessions]{split_trading_sessions()}} divides the observations into overlapping
+and single-market sessions. See that function for the exact session
+definitions.
+
+\item The overlapping observations are pooled, and \code{\link[=vecm]{vecm()}} estimates the
+bivariate VECM under both possible market orderings.
+
+\item \code{\link[=his]{his()}} is applied to both fitted VECMs. The two ordering-specific
+estimates provide the lower and upper Hasbrouck bounds for each market,
+and their average is used as the overlapping-period midpoint estimate.
+
+\item \code{\link[=common_price]{common_price()}} extracts the common efficient price. Its returns
+are assigned to the pre-core, core, and combined post-core overlapping
+subperiods, for which \code{\link[=realized_variance]{realized_variance()}} estimates price variation.
+
+\item \code{\link[=realized_kernel]{realized_kernel()}} estimates price variation during each
+single-market session.
+
+\item \code{\link[=combine_weights]{combine_weights()}} converts the session-specific variance estimates
+into normalized weights and calculates the total overlapping weight.
+
+\item Finally, following Dimpfl and Schweikert (2023), the function
+calculates the daily CWIS for both markets:
+
+\deqn{
+  \begin{pmatrix}
+  S_{cw,1}^{*}\\
+  S_{cw,2}^{*}
+  \end{pmatrix}
+  =
+  w_{\mathrm{overlap}}
+  \begin{pmatrix}
+  S_1^{*}\\
+  S_2^{*}
+  \end{pmatrix}
+  +
+  w_{\mathrm{market1}}
+  \begin{pmatrix}
+  1\\
+  0
+  \end{pmatrix}
+  +
+  w_{\mathrm{market2}}
+  \begin{pmatrix}
+  0\\
+  1
+  \end{pmatrix}.
+  }
+
+Here, \eqn{S_j^{*}} is the midpoint Hasbrouck information share of
+market \eqn{j} during overlapping trading. The term
+\eqn{w_{\mathrm{overlap}}} is the total weight of the overlapping
+subperiods. The terms \eqn{w_{\mathrm{market1}}} and
+\eqn{w_{\mathrm{market2}}} are the total weights of the periods in which
+only market 1 or only market 2 is open.
+
+In this package, market 1 is the futures market and market 2 is the spot
+market. Therefore, \eqn{w_{\mathrm{market1}}} combines the weights of
+\code{futures_pre} and \code{futures_post}, while
+\eqn{w_{\mathrm{market2}}} is the weight of \code{spot_maintenance}.
+
+When the weights are normalized, the two daily CWIS estimates sum to one.
+If \eqn{w_{\mathrm{overlap}}=1}, they equal the midpoint Hasbrouck
+information shares.
+}
+
+Each referenced function documents the corresponding calculation and
+input requirements in detail.
+}
+\section{Relationship to the reference paper}{
+
+
+Dimpfl and Schweikert (2023), following Hasbrouck (2021) and Buccheri et
+al. (2021), use a high-resolution VECM with HAR-structured lag coefficients.
+At a 10-millisecond sampling frequency, their specification uses four
+HAR time-scale blocks to cover lagged price changes over a maximum horizon
+of ten seconds.
+
+The present function instead calls \code{\link[=vecm]{vecm()}}, which estimates the standard
+Johansen VECM implemented by \code{\link[urca:ca.jo]{urca::ca.jo()}}. Therefore, this function
+implements the CWIS framework and its variance-weighting principle but is
+not an exact replication of the paper's high-resolution HAR-VECM. See
+\code{\link[=vecm]{vecm()}} for further details on the VECM specification and its relation to
+the reference paper.
+}
+
+\section{Input requirements}{
+
+
+\code{day_data} must be a standardized data frame containing the columns
+\code{datetime}, \code{trading_day}, \code{futures}, and \code{spot}. It should normally be
+obtained from \code{\link[=validate_and_standardize_input]{validate_and_standardize_input()}} and must contain exactly
+one trading day.
+
+Timestamps must be chronologically ordered and must be interpretable in the
+time zone stored in the \code{"tz"} attribute. Session membership is determined
+from local clock time using \code{session_boundaries}.
+
+Each of the seven required component sessions must contain at least two
+observations. Both price series must be available, finite, and strictly
+positive during overlapping sessions. The price of the open market must be
+available, finite, and strictly positive during each non-overlapping
+session.
+
+The pooled overlapping sample must contain more than \code{K + 2} complete
+observations, and both overlapping price series must vary. Missing values
+are not imputed.
+}
+
+\examples{
+set.seed(123)
+
+n <- 420L
+datetime <- as.POSIXct(
+  "2026-01-05 00:00:00",
+  tz = "America/New_York"
+) + 0:(n - 1L)
+
+common_trend <- cumsum(rnorm(n, sd = 0.0002))
+futures <- 5000 * exp(common_trend + rnorm(n, sd = 0.00005))
+spot <- 5000 * exp(common_trend + rnorm(n, sd = 0.00007))
+
+# Futures are closed during the spot-only session.
+futures[241:300] <- NA_real_
+
+# Spot is closed during the futures-only sessions.
+spot[c(1:60, 361:420)] <- NA_real_
+
+day_data <- data.frame(
+  datetime = datetime,
+  trading_day = as.Date("2026-01-05"),
+  futures = futures,
+  spot = spot
+)
+attr(day_data, "tz") <- "America/New_York"
+
+example_boundaries <- c(
+  overlap_open = 60,
+  core_open = 120,
+  core_close_exclusive = 180,
+  maintenance_start = 240,
+  overlap_resume = 300,
+  overlap_close = 360
+)
+
+result <- daily_cwis(
+  day_data = day_data,
+  K = 2L,
+  session_boundaries = example_boundaries
+)
+
+result$cwis
+result$his_midpoint
+result$variance_weights
+result$overlapping_weight
+
+}
+\references{
+Hasbrouck, J. (2021). Price discovery in high resolution.
+\emph{Journal of Financial Econometrics}, 19(3), 395--430.
+\doi{10.1093/jjfinec/nbz027}
+
+Buccheri, G., Bormetti, G., Corsi, F., and Lillo, F. (2021). Comment on:
+Price discovery in high resolution. \emph{Journal of Financial Econometrics},
+19(3), 439--451. \doi{10.1093/jjfinec/nbz008}
+
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=split_trading_sessions]{split_trading_sessions()}} for constructing the trading sessions;
+\code{\link[=vecm]{vecm()}} for estimating the overlapping-period VECM;
+\code{\link[=his]{his()}} for Hasbrouck information-share bounds;
+\code{\link[=common_price]{common_price()}} for extracting the common efficient price;
+\code{\link[=realized_variance]{realized_variance()}} for overlapping-period variance;
+\code{\link[=realized_kernel]{realized_kernel()}} for single-market variance;
+\code{\link[=combine_weights]{combine_weights()}} for variance weights; and
+\code{\link[=aggregate_cwis]{aggregate_cwis()}} for aggregating results across trading days.
 }

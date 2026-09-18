@@ -7,11 +7,119 @@
 realized_variance(returns)
 }
 \arguments{
-\item{returns}{Numeric efficient-price returns.}
+\item{returns}{A finite numeric vector of intraday efficient-price returns,
+normally obtained from changes in the common-price component estimated
+during an overlapping trading period.}
 }
 \value{
-Sum of squared returns.
+A single non-negative numeric value equal to
+\code{sum(returns^2)}. It estimates the realized variation accumulated over the
+period represented by \code{returns}.
 }
 \description{
-Estimate realized variance from efficient-price returns
+Computes realized variance as the sum of squared intraday efficient-price
+returns over the overlapping trading period.
+}
+\details{
+During overlapping trading, the efficient price is obtained from the
+common-trend representation of the fitted VECM; see \code{\link[=vecm]{vecm()}} and \code{\link[=common_price]{common_price()}}
+for its construction. Following Dimpfl and Schweikert (2023), returns of this
+estimated common efficient price are used instead of selecting either the
+observed futures returns or the observed spot returns.
+
+Once the efficient-price returns \eqn{\Delta m_t} have been estimated, the
+integrated variance can be calculated for any sufficiently long subperiod
+\eqn{S_h} of the overlapping trading period. If \eqn{S_h} contains
+\eqn{n_h} efficient-price returns, its variance is estimated as
+
+\deqn{
+\widehat{\sigma}_{m,h}^{2}
+=
+RV_h^{(n_h)}
+=
+\sum_{i=1}^{n_h} r_{h,i}^{2},
+}
+
+where \eqn{r_{h,i}} is the \eqn{i}-th intraday return of the estimated
+common efficient price in subperiod \eqn{S_h}. Equivalently,
+\eqn{r_{h,i}} represents a change in the estimated common-price component.
+
+This is the simple realized-variance estimator of Andersen et al. (2001)
+and Barndorff-Nielsen and Shephard (2002). In the absence of
+market-microstructure noise, it directly measures the integrated variance of
+that subperiod. In the presence of market-microstructure noise,
+ordinary realized variance may be biased.
+
+The function itself only verifies that \code{returns} is numeric and finite and
+then calculates \code{sum(returns^2)}. It does not estimate the common price,
+construct returns, or assign observations to trading sessions. Those steps
+are performed by \code{\link[=common_price]{common_price()}} and \code{\link[=daily_cwis]{daily_cwis()}} before this function
+is called.
+
+For non-overlapping sessions, in which only one observed market price is
+available, the package uses \code{\link[=realized_kernel]{realized_kernel()}} instead. The realized
+kernel is intended to reduce the influence of market-microstructure noise
+in the observed single-market returns.
+}
+\section{Input requirements}{
+
+
+\code{returns} should be a non-empty numeric vector containing returns from one
+price process, one trading day, and one clearly defined trading period. All
+elements must be finite; missing values, \code{NaN}, \code{Inf}, and \code{-Inf} are not
+permitted.
+
+The sampling frequency should be consistent within the vector. If the
+inputs are log returns, the result is expressed in squared log-return units.
+If price changes are supplied instead, the result is expressed in squared
+price units and should not be interpreted as log-return variation.
+
+When the input is derived from \code{\link[=common_price]{common_price()}}, returns can be constructed
+from changes in its cumulative permanent common-price component.
+}
+
+\examples{
+# A relative efficient-price path
+efficient_price <- c(
+  0,
+  0.0010,
+  0.0006,
+  0.0014,
+  0.0011
+)
+
+efficient_returns <- diff(efficient_price)
+
+rv <- realized_variance(efficient_returns)
+rv
+
+# The function calculates the unadjusted sum of squared returns.
+sum(efficient_returns^2)
+
+}
+\references{
+Andersen, T. G., Bollerslev, T., Diebold, F. X., and Labys, P. (2001).
+The distribution of realized exchange rate volatility. \emph{Journal of the
+American Statistical Association}, 96(453), 42--55.
+\doi{10.1198/016214501750332965}
+
+Barndorff-Nielsen, O. E. and Shephard, N. (2002). Econometric analysis of
+realised volatility and its use in estimating stochastic volatility models.
+\emph{Journal of the Royal Statistical Society: Series B}, 64(2), 253--280.
+\doi{10.1111/1467-9868.00336}
+
+Dias, G. F. and Schweikert, K. (2022). Integrated variance estimation for
+assets traded in multiple venues. \emph{SSRN Working Paper}, 1--48.
+\url{https://ssrn.com/abstract=4253762}
+
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=common_price]{common_price()}} for extracting the permanent common-price component from
+a fitted VECM; \code{\link[=realized_kernel]{realized_kernel()}} for noise-robust variance estimation in
+non-overlapping periods; \code{\link[=combine_weights]{combine_weights()}} for converting period-specific
+variance estimates into CWIS weights; \code{\link[=daily_cwis]{daily_cwis()}} for the complete daily
+calculation.
 }

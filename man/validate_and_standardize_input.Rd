@@ -15,24 +15,183 @@ validate_and_standardize_input(
 )
 }
 \arguments{
-\item{data}{A data frame containing timestamps and two price series.}
+\item{data}{A data frame containing one timestamp column and two
+synchronized numeric price columns representing the futures market and
+the corresponding spot, cash, or ETF market.}
 
-\item{datetime_col}{Name of the timestamp column.}
+\item{datetime_col}{A single character string naming the timestamp column.
+Its values must be character or inherit from \code{POSIXt}.}
 
-\item{futures_col}{Name of the futures-price column.}
+\item{futures_col}{A single character string naming the numeric
+futures-price column. This series is assumed to be observed during
+futures-only trading sessions.}
 
-\item{spot_col}{Name of the spot-price column.}
+\item{spot_col}{A single character string naming the numeric spot-, cash-,
+or ETF-price column. This series is assumed to be observed during the
+spot-only trading session.}
 
-\item{spot_multiplier}{Multiplier applied to the spot price.}
+\item{spot_multiplier}{A finite numeric scalar applied to the spot-price
+series during standardization, before logarithms  are calculated.
+The multiplier should place the spot and futures prices on
+economically comparable scales. The default is \code{10}, corresponding to
+the bundled S&P 500 futures and SPY example; use \code{1} when the supplied
+series are already on comparable scales.}
 
-\item{tz}{Time zone used to parse timestamps and define trading days.}
+\item{tz}{A single character string specifying the IANA/Olson time zone
+used to parse timestamps, assign local trading dates, and interpret
+intraday session boundaries. Defaults to \code{"America/New_York"},
+consistent with the U.S. market application considered in the paper.}
 
-\item{drop_missing_datetime}{Whether rows with missing timestamps are removed.}
+\item{drop_missing_datetime}{A logical scalar. If \code{TRUE}, rows with missing
+or unparseable timestamps are removed. If \code{FALSE}, their presence causes
+an error.}
 }
 \value{
-A data frame with columns \code{datetime}, \code{trading_day}, \code{futures}, and
-\code{spot}.
+A data frame with observations sorted by \code{datetime} and row names reset.
+It contains:
+
+\describe{
+\item{datetime}{
+A \code{POSIXct} timestamp represented in \code{tz}.
+}
+\item{trading_day}{
+A \code{Date} derived from the local calendar date in \code{tz}.
+}
+\item{futures}{
+The standardized futures-price series.
+}
+\item{spot}{
+The spot-price series after multiplication by \code{spot_multiplier}.
+}
+}
+
+The selected time-zone string is also stored in the \code{"tz"} attribute of
+the returned data frame.
 }
 \description{
-Validate and standardize CWIS input data
+Validates, scales, sorts, and standardizes two synchronized price series
+before they are used in the contribution-weighted information-share
+calculation.
+
+The first series represents a futures market. The second represents the
+corresponding spot or cash-market price. In the empirical application of
+Dimpfl and Schweikert (2023), an ETF price is used as the cash-market proxy.
+}
+\details{
+The function performs the following operations:
+\itemize{
+\item verifies that \code{data} is a data frame containing the requested columns;
+\item requires both price columns to be numeric;
+\item parses character or \code{POSIXt} timestamps in \code{tz};
+\item optionally removes rows with missing or unparseable timestamps;
+\item multiplies the spot-price series by \code{spot_multiplier};
+\item rejects observed prices that are non-finite or non-positive;
+\item sorts observations chronologically;
+\item rejects duplicate timestamps; and
+\item assigns a local calendar trading date to every observation.
+}
+
+Individual missing prices are retained because one market may be inactive
+during a non-overlapping session. However, neither price series may be
+entirely missing. Missing prices required in a subsequent VECM or
+realized-kernel calculation can cause that trading day to fail.
+
+\code{futures_col} and \code{spot_col} identify the economic roles of the two input
+series; the corresponding columns in \code{data} may have any names. For example,
+the NASDAQ-100 application may use an E-mini futures column for
+\code{futures_col} and a QQQ ETF column for \code{spot_col}.
+
+\code{spot_multiplier} is product-specific. The default value of \code{10} corresponds
+to the bundled S&P 500 example. Users should set it to \code{1} when the two
+input series are already on the intended scales, or supply another
+appropriate conversion factor.
+
+\code{tz} determines timestamp interpretation, calendar-day assignment, and
+subsequent trading-session allocation. A valid Olson time-zone name such
+as \code{"America/New_York"} is recommended. Fractional seconds are supported
+when they are present in character timestamps.
+}
+\section{Input requirements}{
+
+
+\code{data} must be a data frame containing one timestamp column and two numeric
+price columns. Their names are supplied through \code{datetime_col},
+\code{futures_col}, and \code{spot_col}.
+
+The timestamp column must be either a character vector or an object
+inheriting from \code{POSIXt}. Character timestamps are interpreted in \code{tz}.
+Supported representations include:
+\itemize{
+\item \code{"YYYY-MM-DD HH:MM:SS"};
+\item \code{"YYYY/MM/DD HH:MM:SS"};
+\item \code{"YYYY-MM-DDTHH:MM:SS"};
+\item \code{"YYYY-MM-DDTHH:MM:SSZ"}.
+}
+
+Fractional seconds are supported, for example
+\code{"2026-01-05 09:30:00.125"}.
+
+Missing or unparseable timestamps are removed when
+\code{drop_missing_datetime = TRUE}. If \code{drop_missing_datetime = FALSE}, their
+presence causes an error. The remaining observations are sorted
+chronologically. Duplicate timestamps are not combined and cause the
+function to stop.
+
+Both price columns must be numeric. Individual prices may be missing, but
+neither price series may be entirely missing. Observed prices must be finite
+and strictly positive after applying \code{spot_multiplier}. Missing prices are
+retained and are not imputed.
+}
+
+\section{Dates and time zone}{
+
+
+\code{tz} determines how character timestamps are interpreted and how
+\code{trading_day} is assigned. It should normally be a valid IANA/Olson
+time-zone name, such as \code{"America/New_York"}, \code{"Europe/Berlin"},
+\code{"Europe/London"}, \code{"Asia/Shanghai"}, or \code{"UTC"}. Available names can be
+inspected with \code{OlsonNames()}.
+
+The \code{trading_day} column represents the calendar date of each observation
+in \code{tz}. Dates absent from the input are not inserted. Similarly, a date from
+which all observations are removed during timestamp validation will not
+appear in the returned data.
+
+Time-zone abbreviations such as \code{"EST"} or \code{"CET"} are best avoided because
+they may not apply daylight-saving-time rules as intended.
+}
+
+\examples{
+example_data <- data.frame(
+  timestamp = c(
+    "2026-01-05 09:30:01.250",
+    "2026-01-05 09:30:00.500",
+    NA_character_
+  ),
+  futures_price = c(5001, 5000, 5002),
+  etf_price = c(500.1, 500.0, 500.2)
+)
+
+standardized <- validate_and_standardize_input(
+  data = example_data,
+  datetime_col = "timestamp",
+  futures_col = "futures_price",
+  spot_col = "etf_price",
+  spot_multiplier = 10,
+  tz = "America/New_York"
+)
+
+standardized
+attr(standardized, "tz")
+
+}
+\references{
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=split_trading_days]{split_trading_days()}} for dividing the standardized data by local date,
+\code{\link[=split_trading_sessions]{split_trading_sessions()}} for assigning intraday sessions, and
+\code{\link[=cwis]{cwis()}} for the complete multi-day CWIS calculation.
 }

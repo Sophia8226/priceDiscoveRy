@@ -1,19 +1,581 @@
 ---
-title: "priceDiscoverRy"
-output: rmarkdown::html_vignette
+title: "priceDiscoveRy: Package Overview and Methodology"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+author: "Hui Sun"
 vignette: >
-  %\VignetteIndexEntry{priceDiscoverRy}
+  %\VignetteIndexEntry{priceDiscoveRy: Package Overview and Methodology}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  eval = FALSE
 )
 ```
 
-```{r setup}
-library(priceDiscoveRy)
+This vignette first introduces the scope and interface of `priceDiscoveRy` and
+then presents the economic background, assumptions, and methodology behind the
+package. The methodological discussion follows the source-file order used by
+the package so that each theoretical object is linked to the function that
+implements it. To avoid repetition, each estimator is defined only once; later
+sections refer back to that definition.
+
+# The `priceDiscoveRy` package
+
+## Purpose and scope
+
+`priceDiscoveRy` estimates contribution-weighted information shares (CWIS) for
+two related markets with partially overlapping trading hours. The current
+implementation is written for a futures market and a spot market that represent
+the same asset, or economically equivalent assets linked by a stable long-run
+equilibrium relation.
+
+Conventional Hasbrouck information shares (HIS) describe price discovery while
+both markets trade. They do not measure the information incorporated while only
+one market remains open. CWIS extends the analysis to the complete trading day
+by combining:
+
+1. the HIS midpoint estimated during overlapping trading;
+2. the variation in the common efficient price generated in overlapping
+   subperiods; and
+3. the variation generated in futures-only and spot-only subperiods.
+
+The periods are weighted by their estimated contributions to daily
+efficient-price variation, not by their clock-time duration. Consequently, a
+short but informative session can receive more weight than a long, quiet
+session.
+
+## User interface and result objects
+
+The main user-level function is `cwis()`. It validates the data, splits the
+sample by day, performs the complete calculation for every usable day, and
+aggregates the results. A typical call has the following form:
+
+```{r main-interface}
+fit <- cwis(
+  data = market_data,
+  datetime_col = "datetime",
+  futures_col = "futures_price",
+  spot_col = "spot_price",
+  spot_multiplier = 10,
+  tz = "America/New_York",
+  K = 10L,
+  kernel_type = "ModifiedTukeyHanning",
+  align_by = "seconds",
+  align_period = 1L,
+  continue_on_error = TRUE
+)
 ```
+
+The returned `cwis_result` contains daily estimates, cross-day summaries,
+diagnostics, average variance weights, detailed daily objects, and the settings
+used in the calculation. Successful daily objects retain the lower and upper
+HIS bounds, their midpoint, session variance estimates and weights, CWIS, VECM
+residual correlation, zero-return fractions, and observation counts. Failed
+days remain visible when `continue_on_error = TRUE`; they should be investigated
+rather than silently discarded.
+
+## Function map in source order
+
+The source files form one computational pipeline. The order below matches the
+numbered files in the package.
+
+| Order | Source file | Main function | Role |
+|:--:|:--|:--|:--|
+| 1 | `1_validate_and_standardize_input.R` | `validate_and_standardize_input()` | Parse, scale, validate, sort, and standardize the two price series. |
+| 2 | `2_split_trading_days.R` | `split_trading_days()` | Split standardized observations into local calendar days. |
+| 3 | `3_split_trading_sessions.R` | `split_trading_sessions()` | Allocate a day to overlapping and single-market sessions. |
+| 4 | `4_vecm.R` | `vecm()` | Estimate the overlapping-period Johansen VECM. |
+| 5 | `5_common_price.R` | `common_price()` | Recover the permanent common-price component. |
+| 6 | `6_his.R` | `his()` | Compute ordering-specific Hasbrouck information shares. |
+| 7 | `7_realized_variance.R` | `realized_variance()` | Estimate variation in common-price returns during overlap. |
+| 8 | `8_realized_kernel.R` | `realized_kernel()` | Estimate noise-robust variation in single-market sessions. |
+| 9 | `9_combine_weights.R` | `combine_weights()` | Normalize session variances into contribution weights. |
+| 10 | `10_daily_cwis.R` | `daily_cwis()` | Combine the components into one daily CWIS result. |
+| 11 | `11_aggregate_cwis.R` | `aggregate_cwis()` | Summarize successful and failed days. |
+| 12 | `12_cwis.R` | `cwis()` | Provide the complete multi-day interface. |
+| 13 | `13_plot_cwis.R` | `plot.cwis_result()` | Compare daily HIS and CWIS graphically. |
+
+# Background
+
+## Price discovery in linked markets
+
+The same or an economically equivalent asset may trade in more than one venue.
+Observed prices can differ temporarily because of bid-ask bounce, discreteness,
+latency, liquidity, and other market-microstructure effects. An arbitrage or
+cost-of-carry relationship nevertheless prevents the two prices from drifting
+apart indefinitely. Their non-stationary components therefore reflect a common
+efficient price.
+
+Hasbrouck's (1995) information share attributes innovations in that common
+efficient price to the observed markets. It captures both how quickly a market
+incorporates new information and how well its price avoids transitory noise.
+The standard measure requires simultaneous observations, so it describes
+leadership conditional on both markets being open.
+
+In the latent-price model used by Dimpfl and Schweikert (2023), the unobserved
+efficient price follows a random walk,
+
+\[
+m_{d,t}=m_{d,t-1}+e_{d,t},
+\]
+
+and an observed price in open market (j) satisfies
+
+\[
+p_{j,t}=m_{d,t}+\varepsilon_{j,t}.
+\]
+
+The efficient-price innovation (e_{d,t}) represents permanent information,
+whereas (\varepsilon_{j,t}) represents transitory market-microstructure
+frictions. This distinction motivates using the VECM common trend to measure
+overlap-period variation and a noise-robust realized kernel when only one venue
+is observed.
+
+Partially overlapping hours add a second dimension. Information may arrive
+while only one market trades. Restricting the sample to the overlap omits this
+part of the daily discovery process, whereas weighting periods by duration
+would treat quiet and informative periods alike. Dimpfl and Schweikert (2023)
+resolve the problem by weighting each session by its contribution to daily
+efficient-price variation. During a single-market session, the open market is
+assigned the information generated in that session; during overlap, the
+allocation is determined by HIS.
+
+## Partitioning the trading day
+
+Let day (d) contain (T) ordered observation intervals and let
+(S_1,\ldots,S_H) be disjoint subperiods whose union is the complete day. A
+subperiod may contain simultaneous trading or trading in only one market. The
+partition is economic, not merely chronological: it changes whenever the set
+of open markets changes and may also separate economically distinct parts of
+the overlap, such as pre-core, core, and post-core trading.
+
+With the package defaults, the day is divided in New York local time as follows:
+
+| Component session | Interval | Open market(s) |
+|:--|:--|:--|
+| `futures_pre` | before 04:00:00 | futures only |
+| `overlap_pre` | 04:00:00 to 09:30:00 | futures and spot |
+| `overlap_core` | 09:30:00 to 16:00:01 | futures and spot |
+| `overlap_post_1` | 16:00:01 to 17:00:00 | futures and spot |
+| `spot_maintenance` | 17:00:00 to 18:00:00 | spot only |
+| `overlap_post_2` | 18:00:00 to 20:00:00 | futures and spot |
+| `futures_post` | from 20:00:00 | futures only |
+
+Except for the first and last components, the intervals include the lower and
+exclude the upper boundary. The default `core_close_exclusive` value of
+16:00:01 was designed for one-second data so that 16:00:00 remains in the core
+session. Sub-second applications should replace this boundary with a value
+appropriate to their sampling grid.
+
+# Assumptions and empirical scope
+
+The assumptions below collect the conditions used by the theoretical framework
+and the additional requirements imposed by the implementation.
+
+## Economic and statistical assumptions
+
+1. **Common fundamental value.** The two prices refer to the same asset or to
+   assets connected by a stable arbitrage relation.
+2. **One permanent trend.** During overlapping trading, the two log prices are
+   individually non-stationary, cointegrated with rank one, and driven by one
+   common stochastic trend.
+3. **Efficient-price evolution.** The latent efficient price continues to
+   evolve whether one, both, or neither observed venue is open. Its increments
+   are independent and mean zero, but need not be identically distributed;
+   their variance may be heteroskedastic or exhibit deterministic intraday
+   seasonality.
+4. **Transitory observation error.** An observed open-market price equals the
+   efficient price plus a mean-zero, weakly dependent, covariance-stationary
+   microstructure component. Its variance may change over time and differ
+   between markets.
+5. **Law of one price during overlap.** Short-run deviations are allowed, but
+   the two simultaneously observed prices share the same long-run value.
+6. **Stable overlapping-period dynamics.** The VECM parameters are treated as
+   stable across the overlapping observations pooled within a trading day.
+7. **One-market attribution.** During a single-market session, the open market
+   receives a conditional information share of one and the closed market a
+   share of zero.
+8. **Comparable variance concept.** All session estimators measure the same
+   efficient-price variation in squared log-return units, so they can be added
+   and normalized.
+9. **Cholesky uncertainty.** When contemporaneous VECM innovations are
+   correlated, their covariance cannot be uniquely assigned to markets. Both
+   orderings are therefore retained as bounds and summarized by their midpoint.
+
+## Data and implementation requirements
+
+- Timestamps must identify unique observation instants and be interpreted in
+  the correct IANA time zone.
+- Prices must be numeric, strictly positive when observed, and placed on
+  economically comparable scales before taking logarithms.
+- Missing values may identify a closed market, but the two prices must both be
+  observed in overlapping sessions and the open-market price must be observed
+  in each single-market session.
+- Each of the seven required component sessions must contain at least two rows;
+  the pooled overlap must contain more than `K + 2` complete observations and
+  both price series must vary.
+- The sampling frequency, session boundaries, VECM lag order, kernel alignment,
+  and bandwidth must be chosen for the market and data source rather than
+  accepted mechanically.
+- Local-calendar-day splitting is suitable only when the economic trading day
+  agrees with the chosen local date. Markets whose trading day begins on the
+  preceding evening require a custom day convention upstream.
+
+## Relationship to the reference methodology
+
+The package implements the CWIS framework of Dimpfl and Schweikert (2023), but
+it is not an exact replication of their high-resolution empirical estimator.
+The paper uses a HAR-structured VECM for 10-millisecond observations, with lag
+blocks extending to ten seconds. `priceDiscoveRy` instead calls
+`urca::ca.jo()` to fit a standard finite-lag Johansen VECM. The variance
+weighting, HIS bounds, common-trend extraction, realized-variance calculation,
+realized-kernel calculation, and final CWIS combination follow the same
+conceptual framework, while the short-run VECM parameterization differs.
+
+# Methodology in package order
+
+## 1. Validate and standardize the input
+
+`validate_and_standardize_input()` maps the user-selected columns to the
+internal schema `datetime`, `trading_day`, `futures`, and `spot`. Character
+timestamps are parsed in the supplied time zone, observations are sorted, and
+duplicate timestamps are rejected. The spot series is multiplied by
+`spot_multiplier` (default 10) before validation so that the two prices can be
+placed on comparable scales.
+
+This step does not impute prices. It allows `NA` values that represent market
+closures, but every observed value must be finite and strictly positive. The
+local date derived from the standardized timestamp becomes `trading_day`.
+
+## 2. Split observations into trading days
+
+`split_trading_days()` separates the standardized data by `trading_day` and
+preserves the time-zone attribute. Every later model is therefore estimated
+independently for one local calendar day. This design permits day-specific
+information shares and variance weights rather than imposing a single estimate
+on the full sample.
+
+## 3. Split each day into trading sessions
+
+`split_trading_sessions()` assigns each observation to the seven component
+sessions defined above and joins the four simultaneous-trading components into
+`overlap`. The function uses local clock time rather than row positions. Custom
+boundaries must retain the six required names and be strictly increasing within
+the 24-hour day.
+
+The pooled `overlap` sample supplies the VECM, while its component-session row
+counts later allocate common-price returns to economically meaningful
+subperiods.
+
+## 4. Estimate the overlapping-period VECM
+
+Let (p_t=(p_{F,t},p_{S,t})') contain the futures and spot log prices observed
+during overlap. The standard VECM used by `vecm()` is
+
+\[
+\Delta p_t
+= \Pi p_{t-1}
++ \sum_{i=1}^{K-1}\Gamma_i\Delta p_{t-i}
++ d_t + u_t,
+\qquad
+\operatorname{Var}(u_t)=\Omega,
+\tag{1}
+\]
+
+where (\Pi=\alpha\beta') contains the long-run relation and adjustment
+coefficients, (\Gamma_i) describes short-run dynamics, (d_t) contains any
+deterministic terms, and (u_t) is the reduced-form innovation vector. The
+package default is a Johansen trace specification with `ecdet = "none"`,
+`spec = "transitory"`, and `K = 10`. In `urca::ca.jo()`, `K` is the lag order
+in levels, so the VECM contains (K-1) lags of first differences.
+
+The daily estimator assumes rank one downstream. The Johansen object is
+retained, but `daily_cwis()` does not perform a separate data-driven rank choice
+for every day; users should verify cointegration and the economic restriction
+before interpreting the results.
+
+## 5. Extract the common efficient price
+
+For rank one, let (\alpha_\perp) and (\beta_\perp) denote orthogonal
+complements and define
+
+\[
+\Upsilon = I_2-\sum_{i=1}^{K-1}\Gamma_i,
+\qquad
+C = \beta_\perp
+\left(\alpha_\perp'\Upsilon\beta_\perp\right)^{-1}
+\alpha_\perp'.
+\tag{2}
+\]
+
+The common-trend representation separates the permanent response
+(C\sum_{s=1}^{t}u_s) from stationary transitory dynamics. Because (C) has
+rank one, its rows describe the same permanent trend up to normalization.
+`common_price()` returns the first component of this cumulative permanent
+part, the long-run impact matrix (C), and the contemporaneous correlation of
+the two VECM residual series.
+
+The residual correlation is diagnostically important: stronger correlation
+usually makes the ordering-specific HIS estimates farther apart.
+
+## 6. Calculate Hasbrouck information shares
+
+Let (\xi) be a row of (C) and write the innovation covariance matrix as
+(\Omega=FF'), where (F) is a lower-triangular Cholesky factor. For the
+supplied market ordering, `his()` calculates
+
+\[
+S_j = \frac{[\xi F]_j^2}{\xi\Omega\xi'},
+\qquad j\in\{F,S\}.
+\tag{3}
+\]
+
+When the innovations are correlated, the Cholesky allocation depends on which
+market is placed first. `daily_cwis()` therefore fits the VECM twice: once in
+futures-spot order and once in spot-futures order. After restoring common market
+labels, the two estimates define each market's lower and upper bound. The
+overlapping-period point estimate is their midpoint,
+
+\[
+S_j^* = \frac{S_j^{\mathrm{lower}}+S_j^{\mathrm{upper}}}{2}.
+\tag{4}
+\]
+
+The midpoint is a summary, not a resolution of the identification problem. The
+bounds and residual correlation should remain part of the reported evidence.
+
+## 7. Estimate overlapping-period realized variance
+
+Let (\Delta \widehat m_i) denote returns of the estimated common price. For an
+overlapping subperiod (S_h), `realized_variance()` uses
+
+\[
+\widehat{IV}_{h}^{\mathrm{RV}}
+= \sum_{i\in S_h}(\Delta\widehat m_i)^2.
+\tag{5}
+\]
+
+The common-price innovations are serially uncorrelated by construction under
+the maintained VECM representation, which motivates ordinary realized variance
+rather than a univariate venue-price estimator during fragmented trading.
+
+The implementation reports three overlap variance components:
+`overlap_pre`, `overlap_core`, and `overlap_post`. The last component combines
+the row counts of `overlap_post_1` and `overlap_post_2`. The complete pooled
+overlap is used to estimate one VECM before its efficient returns are allocated
+to these components.
+
+## 8. Estimate single-market realized kernels
+
+Observed returns in a single open market may be autocorrelated by
+microstructure noise. For each futures-only or spot-only session,
+`realized_kernel()` estimates
+
+\[
+\widehat{IV}_{h}^{K}
+= \sum_{i=1}^{n}r_{i,n}^{2}
++ \sum_{b=1}^{B}
+k\!\left(\frac{b-1}{B}\right)
+(\eta_b+\eta_{-b}),
+\qquad
+\eta_b=\sum_{i=1}^{n-b}r_{i,n}r_{i+b,n}.
+\tag{6}
+\]
+
+The weighted autocovariances correct for serial dependence at high frequency.
+The default is the modified Tukey-Hanning kernel used in the reference paper.
+The wrapper sets
+
+\[
+B=\left\lfloor c\sqrt{N}\right\rfloor,
+\tag{7}
+\]
+
+where (N) is the number of session rows and (c=2.3970) for the modified
+Tukey-Hanning kernel or (c=3.5134) for the Parzen kernel. Other kernels require
+an explicit positive `bandwidth_constant`. `align_by` and `align_period`
+control sampling before returns are constructed; `align_by = NULL` retains an
+already prepared observation grid.
+
+The three single-market estimates are `futures_pre`, `spot_maintenance`, and
+`futures_post`. They are expressed in squared-return units and are neither
+annualized nor converted to volatility.
+
+## 9. Convert session variances into weights
+
+Let (\widehat\sigma_{m,h}^{2}) be the estimated efficient-price variance for
+period (S_h), obtained from Equation (5) or (6) as appropriate.
+`combine_weights()` calculates
+
+\[
+w_h =
+\frac{\widehat\sigma_{m,h}^{2}}
+{\sum_{q=1}^{H}\widehat\sigma_{m,q}^{2}},
+\qquad
+\sum_{h=1}^{H}w_h=1.
+\tag{8}
+\]
+
+The total overlap weight is the sum of `overlap_pre`, `overlap_core`, and
+`overlap_post`. The futures-only weight is the sum of `futures_pre` and
+`futures_post`; the spot-only weight is `spot_maintenance`.
+
+These are contribution weights, not precision weights. They deliberately have
+a direct variance-share interpretation and do not adjust for possible
+differences in sampling error or estimator accuracy across sessions.
+
+## 10. Construct daily CWIS
+
+`daily_cwis()` orchestrates Steps 3-9. Write (w_O) for the total overlap
+weight, (w_F) for the futures-only weight, and (w_S) for the spot-only
+weight. With (S_F^*) and (S_S^*) denoting the overlapping-period HIS
+midpoints, the daily measure is
+
+\[
+\begin{pmatrix}
+CWIS_F\\
+CWIS_S
+\end{pmatrix}
+=
+w_O
+\begin{pmatrix}
+S_F^*\\
+S_S^*
+\end{pmatrix}
++
+w_F
+\begin{pmatrix}
+1\\
+0
+\end{pmatrix}
++
+w_S
+\begin{pmatrix}
+0\\
+1
+\end{pmatrix}.
+\tag{9}
+\]
+
+This is the only stage at which the conditional information shares and the
+across-period variance weights are combined. The identities
+(w_O+w_F+w_S=1), (S_F^*+S_S^*=1), and
+(CWIS_F+CWIS_S=1) should hold up to numerical precision.
+
+Two limiting cases clarify the interpretation. If (w_O=1), daily CWIS equals
+the conventional HIS midpoint. If there is no overlap, or an overlapping
+market has a conditional share of one, the expression reduces to the
+sequential-market allocation when the same variance estimator is used.
+
+## 11. Aggregate across days
+
+`aggregate_cwis()` converts daily objects and failure records into a single
+daily table. Across successful days it reports the arithmetic mean and sample
+standard deviation of the HIS midpoint and CWIS, along with mean and standard
+deviation of each period weight. It also reports counts of supplied,
+successful, and failed days, the mean and standard deviation of the overlap
+weight, and mean residual correlation.
+
+The aggregation is descriptive and gives every successful day equal weight. It
+does not re-estimate a pooled VECM, pool intraday variances across days, or
+weight daily CWIS by the day's total variance.
+
+## 12. Run the complete multi-day workflow
+
+`cwis()` connects the preceding stages in the same order as the source files:
+
+\[
+\text{raw data}
+\rightarrow \text{standardized days}
+\rightarrow \text{sessions}
+\rightarrow \{\text{VECM, HIS, common price, RV, RK}\}
+\rightarrow \text{weights}
+\rightarrow \text{daily CWIS}
+\rightarrow \text{cross-day summary}.
+\]
+
+When `continue_on_error = TRUE`, a failed day contributes an error record but
+does not stop later dates from being processed. This behavior supports long
+samples, but the reason and frequency of failure remain part of the empirical
+result.
+
+## 13. Plot HIS and CWIS
+
+`plot.cwis_result()` is an interpretive endpoint rather than an additional
+estimator. It sorts successful days, plots the selected market's HIS midpoint
+and CWIS, and adds a 0.5 benchmark by default. Failed days are omitted from the
+plot but remain in `fit$daily`; therefore the plot should always be read with
+the failure diagnostics.
+
+# Interpretation and diagnostics
+
+HIS and CWIS answer related but different questions:
+
+- HIS asks which market leads price discovery while both markets trade.
+- CWIS asks how much each market contributes over the complete trading day.
+
+A difference between the two does not mean that the overlapping-period VECM
+changed. It means that economically relevant variation occurred when only one
+market was open. The session weights identify where that difference originated.
+
+For every application, interpretation should proceed in the following order:
+
+1. verify the time zone, trading-day convention, market-open indicators, price
+   scaling, and session boundaries;
+2. examine failed days and confirm that exclusions are not systematic;
+3. verify cointegration rank one and assess the chosen VECM lag order;
+4. inspect HIS lower and upper bounds together with residual correlation;
+5. inspect zero-return fractions for stale prices or an excessively fine grid;
+6. inspect all session variance weights and confirm that they sum to one;
+7. compare HIS with CWIS and attribute the difference to specific
+   single-market weights; and
+8. check robustness to plausible sampling frequencies, kernel alignment,
+   bandwidths, and session definitions.
+
+CWIS is a variance-based measure of permanent information incorporation. It is
+not, by itself, a measure of trading volume, liquidity, profitability, causal
+influence, or overall market quality. The package reports daily dispersion but
+does not currently provide analytical standard errors or confidence intervals
+for HIS, session weights, or CWIS.
+
+# References
+
+Barndorff-Nielsen, O. E., Hansen, P. R., Lunde, A., and Shephard, N. (2008).
+Designing realized kernels to measure the ex post variation of equity prices in
+the presence of noise. *Econometrica*, 76(6), 1481-1536.
+<https://doi.org/10.3982/ECTA6495>.
+
+Barndorff-Nielsen, O. E., Hansen, P. R., Lunde, A., and Shephard, N. (2009).
+Realized kernels in practice: Trades and quotes. *The Econometrics Journal*,
+12(3), C1-C32. <https://doi.org/10.1111/j.1368-423X.2008.00275.x>.
+
+Dias, G. F., and Schweikert, K. (2022). Integrated variance estimation for
+assets traded in multiple venues. *SSRN Working Paper*.
+<https://ssrn.com/abstract=4253762>.
+
+Dimpfl, T., and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. *Journal of Banking & Finance*, 154,
+106970. <https://doi.org/10.1016/j.jbankfin.2023.106970>.
+
+Hasbrouck, J. (1995). One security, many markets: Determining the contributions
+to price discovery. *The Journal of Finance*, 50(4), 1175-1199.
+<https://doi.org/10.2307/2329348>.
+
+Hasbrouck, J. (2021). Price discovery in high resolution. *Journal of Financial
+Econometrics*, 19(3), 395-430. <https://doi.org/10.1093/jjfinec/nbz027>.
+
+Stock, J. H., and Watson, M. W. (1988). Testing for common trends. *Journal of
+the American Statistical Association*, 83(404), 1097-1107.
+<https://doi.org/10.2307/2290142>.
+
+Wang, J., and Yang, M. (2011). Housewives of Tokyo versus the gnomes of Zurich:
+Measuring price discovery in sequential markets. *Journal of Financial
+Markets*, 14(1), 82-108. <https://doi.org/10.1016/j.finmar.2010.08.002>.
+

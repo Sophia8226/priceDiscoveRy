@@ -7,13 +7,257 @@
 aggregate_cwis(results)
 }
 \arguments{
-\item{results}{A list of successful \code{cwis_day_result} objects and/or failed
-day records created by \code{\link[=cwis]{cwis()}}.}
+\item{results}{A list containing successful \code{cwis_day_result} objects
+produced by \code{\link[=daily_cwis]{daily_cwis()}} and/or failed-day records created by \code{\link[=cwis]{cwis()}}.
+Each failed record must contain \code{date} and \code{error}.}
 }
 \value{
-A list with daily results, information-share summary, diagnostic
-summary, and variance-weight summary.
+A named list with four components:
+
+\describe{
+\item{\code{daily}}{
+A data frame containing one row per supplied trading day, in input order.
+It contains:
+
+\itemize{
+\item \code{date}: trading date;
+\item \code{status}: either \code{"ok"} or \code{"failed"};
+\item \code{error}: failure message, or \code{NA} for a successful day;
+\item \code{his_futures}, \code{his_spot}: daily midpoint HIS estimates;
+\item \code{cwis_futures}, \code{cwis_spot}: daily CWIS estimates;
+\item \code{overlapping_weight}: total overlapping-period variance weight;
+\item \code{residual_correlation}: correlation between VECM innovations;
+\item \code{zero_return_futures}, \code{zero_return_spot}: fractions of
+zero returns in the overlapping sample;
+\item \code{n_observations}: total daily observations; and
+\item \code{n_overlap}: observations in the overlapping sessions.
+}
+
+Numerical results are \code{NA} for failed days.
+}
+
+\item{\code{information_share}}{
+A data frame with columns \code{statistic}, \code{futures}, and
+\code{spot}. Its rows contain \code{"HIS mean"}, \code{"HIS SD"},
+\code{"CWIS mean"}, and \code{"CWIS SD"}, calculated across successful
+days with missing values removed.
+}
+
+\item{\code{diagnostics}}{
+A data frame with columns \code{statistic} and \code{value}. It reports
+the numbers of supplied, successful, and failed days; the mean and sample
+standard deviation of the overlapping-period weight; and the mean
+residual correlation.
+}
+
+\item{\code{variance_weights}}{
+A data frame with columns \code{period}, \code{mean}, and \code{sd},
+containing the cross-day mean and sample standard deviation of each
+period's variance weight. It is empty when no successful day is available.
+}
+}
 }
 \description{
-Aggregate daily CWIS estimates
+Aggregates successful daily contribution-weighted information-share
+estimates and retains diagnostic records for both successful and failed
+trading days.
+
+The function produces a day-level results table, cross-day summaries of
+Hasbrouck information shares and CWIS estimates, calculation diagnostics,
+and summaries of the intraday variance weights.
+}
+\details{
+Dimpfl and Schweikert (2023) calculate the CWIS separately for each trading
+day and report the time-series mean and standard deviation of the resulting
+daily estimates. This function implements the corresponding descriptive
+aggregation.
+
+This function does not recalculate daily information shares, efficient
+prices, realized variances, or variance weights. It only summarizes values
+already stored in the supplied daily result objects.
+
+For the cross-day aggregation, let \eqn{x_d} denote a daily statistic, such
+as the futures CWIS or the weight of an intraday period. Let
+\eqn{\mathcal{D}_x} denote the set of successful days for which
+\eqn{x_d} is available, and let
+\eqn{D_x = |\mathcal{D}_x|} denote the number of these days. The reported
+mean is
+
+\deqn{
+\bar{x}
+=
+\frac{1}{D_x}
+\sum_{d \in \mathcal{D}_x} x_d.
+}
+
+When at least two non-missing observations are available, the reported
+sample standard deviation is
+
+\deqn{
+s_x
+=
+\sqrt{
+\frac{1}{D_x-1}
+\sum_{d \in \mathcal{D}_x}
+(x_d-\bar{x})^2
+}.
+}
+
+Each available trading day receives the same weight in these calculations.
+The statistics are not weighted by the number of observations, daily total
+variance, or session length.
+
+If no non-missing value is available, the mean is \code{NA_real_}. If fewer than
+two values are available, the sample standard deviation is \code{NA_real_}.
+These outputs are descriptive statistics only. The function does not
+calculate standard errors, confidence intervals, hypothesis tests, or
+corrections for serial dependence across trading days.
+}
+\section{Successful and failed days}{
+
+
+An element inheriting from class \code{cwis_day_result} is treated as a
+successful trading day. Its HIS midpoint, CWIS, variance weights, and
+diagnostics are included in the cross-day summaries.
+
+Every other element is treated as a failed-day record. A failed day remains
+in the \code{daily} table with \code{status = "failed"} and its error message, but its
+numerical estimates are recorded as missing and excluded from the summary
+statistics.
+
+The numbers of supplied, successful, and failed days are reported
+separately. If no day is successful, the information-share summary contains
+missing values and the variance-weight summary is an empty data frame.
+
+An empty \code{results} list is permitted. It produces an empty \code{daily} table,
+missing information-share summaries, zero supplied and successful days,
+and an empty variance-weight table.
+}
+
+\section{Interpretation}{
+
+
+\code{information_share} compares the conventional midpoint Hasbrouck
+information share with the full-day CWIS. A difference between their means
+indicates that non-overlapping trading periods materially change the
+estimated allocation of price discovery.
+
+As discussed by Putnins (2013), HIS may reflect both the speed at which a
+market incorporates information and the extent to which its observed price
+avoids transitory noise. CWIS additionally accounts for efficient-price
+variation generated while only one market is open.
+
+\code{variance_weights} summarizes when efficient-price variation occurs during
+the trading day. A large mean weight indicates that the corresponding
+session contributes a large share of average daily price variation; it does
+not necessarily indicate that the session is long.
+}
+
+\section{Input requirements}{
+
+
+\code{results} must be a list. Each successful element must be a complete
+\code{cwis_day_result} object produced by \code{\link[=daily_cwis]{daily_cwis()}}. In particular, it must
+contain:
+
+\itemize{
+\item \code{date};
+\item \code{his_midpoint};
+\item \code{cwis};
+\item \code{overlapping_weight};
+\item \code{residual_correlation};
+\item \code{zero_return_fraction};
+\item \code{n_observations};
+\item \code{n_overlap}; and
+\item \code{variance_weights}.
+}
+
+A failed-day record must contain a valid \code{date} and a character \code{error}
+message.
+
+Successful results should use the same market names and the same named
+variance-weight components in the same order. Dates should normally be
+unique. The function preserves the order of \code{results} and does not sort the
+output chronologically.
+}
+
+\examples{
+day_1 <- structure(
+  list(
+    date = as.Date("2026-01-05"),
+    his_midpoint = c(futures = 0.60, spot = 0.40),
+    cwis = c(futures = 0.72, spot = 0.28),
+    overlapping_weight = 0.70,
+    residual_correlation = 0.35,
+    zero_return_fraction = c(futures = 0.10, spot = 0.15),
+    n_observations = 10000L,
+    n_overlap = 7000L,
+    variance_weights = c(
+      futures_pre = 0.12,
+      spot_maintenance = 0.06,
+      futures_post = 0.12,
+      overlap_pre = 0.10,
+      overlap_core = 0.50,
+      overlap_post = 0.10
+    )
+  ),
+  class = "cwis_day_result"
+)
+
+day_2 <- structure(
+  list(
+    date = as.Date("2026-01-06"),
+    his_midpoint = c(futures = 0.55, spot = 0.45),
+    cwis = c(futures = 0.68, spot = 0.32),
+    overlapping_weight = 0.65,
+    residual_correlation = 0.40,
+    zero_return_fraction = c(futures = 0.12, spot = 0.18),
+    n_observations = 9500L,
+    n_overlap = 6500L,
+    variance_weights = c(
+      futures_pre = 0.15,
+      spot_maintenance = 0.05,
+      futures_post = 0.15,
+      overlap_pre = 0.10,
+      overlap_core = 0.45,
+      overlap_post = 0.10
+    )
+  ),
+  class = "cwis_day_result"
+)
+
+failed_day <- list(
+  date = as.Date("2026-01-07"),
+  error = "Insufficient observations in one or more sessions."
+)
+
+aggregated <- aggregate_cwis(list(day_1, day_2, failed_day))
+
+aggregated$daily
+aggregated$information_share
+aggregated$diagnostics
+aggregated$variance_weights
+
+}
+\references{
+Hasbrouck, J. (1995). One security, many markets: Determining the
+contributions to price discovery.\emph{The Journal of Finance}, 50(4),
+1175--1199.\doi{10.2307/2329348}
+
+Putniņš, T. J. (2013). What do price discovery metrics really measure?
+\emph{Journal of Empirical Finance}, 23, 68--83.
+\doi{10.1016/j.jempfin.2013.05.004}
+
+Dimpfl, T. and Schweikert, K. (2023). Information shares for markets with
+partially overlapping trading hours. \emph{Journal of Banking & Finance},
+154, 106970. \doi{10.1016/j.jbankfin.2023.106970}
+}
+\seealso{
+\code{\link[=daily_cwis]{daily_cwis()}} for calculating the daily HIS, variance weights, and CWIS;
+\code{\link[=combine_weights]{combine_weights()}} for constructing daily period weights;
+\code{\link[=his]{his()}} for Hasbrouck information shares;
+\code{\link[=realized_variance]{realized_variance()}} and \code{\link[=realized_kernel]{realized_kernel()}} for the underlying
+session-variance estimates; and
+\code{\link[=cwis]{cwis()}} for processing multiple trading days and creating failed-day
+records.
 }
