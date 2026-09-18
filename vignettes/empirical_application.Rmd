@@ -1,24 +1,4 @@
 ---
-title: "Empirical Application of priceDiscoveRy"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Empirical Application of priceDiscoveRy}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
----
-
-```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
-)
-```
-
-```{r setup}
-library(priceDiscoveRy)
-```
-
----
 title: "A Week of Price Discovery: An Empirical Application"
 author: "Hui Sun"
 output:
@@ -469,4 +449,3 @@ The empirical framework follows Dimpfl, T., and Schweikert, K. (2023),
 "Information shares for markets with partially overlapping trading hours,"
 *Journal of Banking & Finance*, 154, 106970.
 <https://doi.org/10.1016/j.jbankfin.2023.106970>.
-
